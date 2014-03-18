@@ -15,10 +15,8 @@
 package pongo
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"reflect"
 	"regexp"
@@ -33,65 +31,6 @@ func Unmarshal(b []byte, v interface{}, prefix string) error {
 	d := *defaultDecoder
 	d.r = bytes.NewReader(b)
 	return d.Decode(v, prefix)
-}
-
-type decodStatus struct {
-	p prefix
-	d map[string]string
-}
-
-func (s decodStatus) GetValue(env string) (string, bool) {
-	p := strings.Join(s.p, ".")
-	val, ok := s.d[p+"@"+env]
-	if !ok {
-		val, ok = s.d[p]
-	}
-	return val, ok
-}
-
-type prefix []string
-
-func (p *prefix) Push(s string) {
-	//fmt.Println("->", p, s)
-	*p = append(*p, s)
-}
-
-func (p *prefix) Pop() string {
-	s := (*p)[len(*p)-1]
-	//fmt.Println("<-", p, s)
-	*p = (*p)[:len(*p)-1]
-	return s
-}
-
-var defaultDecoder = &Decoder{arrSep: regexp.MustCompile(`\s*,\s*|\s+`)}
-
-type tag struct {
-	Name      string
-	Modifiers map[string]string
-}
-
-func newTag(t reflect.StructField) (tg tag) {
-	s := t.Tag.Get("pongo")
-	tg.Name = strings.ToLower(t.Name)
-	if s == "" {
-		return
-	}
-	v := strings.Split(s, ",")
-	if v[0] != "" {
-		tg.Name = v[0]
-	}
-	if len(v) == 1 {
-		return
-	}
-	tg.Modifiers = make(map[string]string)
-	for i := 1; i < len(v); i++ {
-		x := strings.Index(v[i], "=")
-		if x < 1 {
-			continue
-		}
-		tg.Modifiers[v[i][:x]] = v[i][i+x:]
-	}
-	return
 }
 
 // A Decoder reads and decodes properties into struct from an input stream.
@@ -117,7 +56,8 @@ func NewDecoder(r io.Reader, sep, env string) (d *Decoder, err error) {
 }
 
 func (d *Decoder) Decode(v interface{}, prefix string) error {
-	data, err := readMap(d.r)
+	s := decodStatus{}
+	err := s.readMap(d.r)
 	if err != nil {
 		return err
 	}
@@ -126,9 +66,8 @@ func (d *Decoder) Decode(v interface{}, prefix string) error {
 	if t.Kind() != reflect.Ptr || r.IsNil() {
 		return errors.New("pointer needed")
 	}
-	s := decodStatus{d: data}
 	if prefix != "" {
-		s.p.Push(prefix)
+		s.Push(prefix)
 	}
 	return d.decodeStruct(s, r.Elem(), t.Elem(), tag{})
 }
@@ -141,21 +80,20 @@ func (d *Decoder) decodeElement(s decodStatus, v reflect.Value, t reflect.Type, 
 		return d.decodePtr(s, v, t, tg)
 	}
 	if tg.Name != "." {
-		s.p.Push(tg.Name)
-		defer s.p.Pop()
+		s.Push(tg.Name)
+		defer s.Pop()
 	}
 	switch v.Kind() {
 	case reflect.Struct:
 		return d.decodeStruct(s, v, t, tg)
 	case reflect.Map:
 		return d.decodeMap(s, v, t)
+	case reflect.Slice:
+		return d.decodeSlice(s, v, t, tg)
 	default:
 		val, ok := s.GetValue(d.env)
 		if !ok {
 			return nil
-		}
-		if v.Kind() == reflect.Slice {
-			return d.decodeSlice(v, t, val)
 		}
 		return d.decodeField(v, val)
 	}
@@ -175,12 +113,30 @@ func (d *Decoder) decodeField(v reflect.Value, val string) error {
 	return nil
 }
 
-func (d *Decoder) decodeSlice(v reflect.Value, t reflect.Type, val string) error {
-	elements := d.arrSep.Split(val, -1)
-	slice := reflect.MakeSlice(t, 0, len(elements))
-	for _, s := range elements {
+func (d *Decoder) decodeSlice(s decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
+	if _, isInline := tg.Modifiers["inline"]; isInline {
+		val, ok := s.GetValue(d.env)
+		if !ok {
+			return nil
+		}
+		elements := d.arrSep.Split(val, -1)
+		slice := reflect.MakeSlice(t, 0, len(elements))
+		for _, s := range elements {
+			mv := reflect.New(t.Elem())
+			err := d.decodeField(mv.Elem(), s)
+			if err != nil {
+				return err
+			}
+			slice = reflect.Append(slice, mv.Elem())
+		}
+		v.Set(slice)
+		return nil
+	}
+	index := s.GetIndex()
+	slice := reflect.MakeSlice(t, 0, len(index))
+	for _, i := range index {
 		mv := reflect.New(t.Elem())
-		err := d.decodeField(mv.Elem(), s)
+		err := d.decodeElement(s, mv.Elem(), mv.Elem().Type(), tag{Name: strconv.Itoa(i), Modifiers: tg.Modifiers})
 		if err != nil {
 			return err
 		}
@@ -248,47 +204,4 @@ func (d *Decoder) decodePtr(s decodStatus, v reflect.Value, t reflect.Type, tg t
 	}
 	v.Set(nv)
 	return nil
-}
-
-func clean(s string) string {
-	if len(s) > 1 && s[len(s)-1] == '\n' {
-		s = s[:len(s)-1]
-	}
-	if len(s) > 1 && s[len(s)-1] == '\r' {
-		s = s[:len(s)-1]
-	}
-	return s
-}
-
-func readMap(r io.Reader) (dd map[string]string, err error) {
-	dd = make(map[string]string)
-	var l, s, lastKey = 0, "", ""
-	for r := bufio.NewReader(r); err == nil; l++ {
-		s, err = r.ReadString(byte('\n'))
-		if s == "" || s[0] == '#' {
-			continue
-		}
-		s = clean(s)
-		for ; s[len(s)-1] == '\\'; l++ {
-			v, err := r.ReadString(byte('\n'))
-			if err != nil && err != io.EOF {
-				return nil, err
-			}
-			s = s[:len(s)-1] + "\n" + strings.Trim(clean(v), " \t")
-		}
-		if s[0] == '\t' {
-			dd[lastKey] = dd[lastKey] + " " + s[1:]
-			continue
-		}
-		i := strings.Index(s, "=")
-		if i < 1 {
-			return nil, fmt.Errorf("bad row %v, %s", l, s)
-		}
-		lastKey = strings.Trim(s[:i], " ")
-		dd[lastKey] = strings.Trim(s[i+1:], " ")
-	}
-	if err != io.EOF {
-		return nil, err
-	}
-	return dd, nil
 }
