@@ -12,12 +12,30 @@ import (
 )
 
 type decodStatus struct {
-	p []string
-	d map[string]string
+	pref []string
+	data map[string]string
+	env  map[string]map[string]string
+}
+
+func (s *decodStatus) getUnread() (u []string) {
+	if len(s.data) != 0 {
+		for k := range s.data {
+			u = append(u, k)
+		}
+	}
+	for i := range s.env {
+		if len(s.env[i]) != 0 {
+			for k := range s.env[i] {
+				u = append(u, k+"@"+i)
+			}
+		}
+	}
+	return
 }
 
 func (s *decodStatus) readMap(r io.Reader) (err error) {
-	s.d = make(map[string]string)
+	s.data = make(map[string]string)
+	s.env = make(map[string]map[string]string)
 	var l, v, lastKey = 0, "", ""
 	for r := bufio.NewReader(r); err == nil; l++ {
 		v, err = r.ReadString(byte('\n'))
@@ -33,7 +51,7 @@ func (s *decodStatus) readMap(r io.Reader) (err error) {
 			v = v[:len(v)-1] + "\n" + strings.Trim(clean(x), " \t")
 		}
 		if v[0] == '\t' {
-			s.d[lastKey] = s.d[lastKey] + " " + v[1:]
+			s.data[lastKey] = s.data[lastKey] + " " + v[1:]
 			continue
 		}
 		i := strings.Index(v, "=")
@@ -41,7 +59,19 @@ func (s *decodStatus) readMap(r io.Reader) (err error) {
 			return fmt.Errorf("bad row %v, %s", l, v)
 		}
 		lastKey = strings.Trim(v[:i], " ")
-		s.d[lastKey] = strings.Trim(v[i+1:], " ")
+		var env = ""
+		if x := strings.Split(lastKey, "@"); len(x) > 1 {
+			lastKey = x[0]
+			env = x[1]
+		}
+		if env == "" {
+			s.data[lastKey] = strings.Trim(v[i+1:], " ")
+		} else {
+			if s.env[env] == nil {
+				s.env[env] = make(map[string]string)
+			}
+			s.env[env][lastKey] = strings.Trim(v[i+1:], " ")
+		}
 	}
 	if err != io.EOF {
 		return err
@@ -50,18 +80,24 @@ func (s *decodStatus) readMap(r io.Reader) (err error) {
 }
 
 func (s *decodStatus) GetValue(env string) (string, bool) {
-	p := strings.Join(s.p, ".")
-	val, ok := s.d[p+"@"+env]
-	if !ok {
-		val, ok = s.d[p]
+	key := strings.Join(s.pref, ".")
+	value, exist := s.data[key]
+	if e, ok := s.env[env]; ok {
+		if v, ok := e[key]; ok {
+			value, exist = v, ok
+		}
 	}
-	return val, ok
+	delete(s.data, key)
+	for i := range s.env {
+		delete(s.env[i], key)
+	}
+	return value, exist
 }
 
 func (s *decodStatus) GetIndex() []int {
 	indexMap := make(map[int]bool)
-	p := strings.Join(s.p, ".") + "."
-	for key := range s.d {
+	p := strings.Join(s.pref, ".") + "."
+	for key := range s.data {
 		if !strings.HasPrefix(key, p) {
 			continue
 		}
@@ -86,12 +122,12 @@ func (s *decodStatus) GetIndex() []int {
 type prefix []string
 
 func (s *decodStatus) Push(v string) {
-	s.p = append(s.p, v)
+	s.pref = append(s.pref, v)
 }
 
 func (s *decodStatus) Pop() string {
-	v := s.p[len(s.p)-1]
-	s.p = s.p[:len(s.p)-1]
+	v := s.pref[len(s.pref)-1]
+	s.pref = s.pref[:len(s.pref)-1]
 	return v
 }
 

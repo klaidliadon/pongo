@@ -1,23 +1,38 @@
-// PonGo (Properties on Go) is a simple configurarion library that converts properties files in complex structures.
-// For example the file with the following content:
-// 	map.a=11
-// 	map.b=22
-// 	name=myname
-// 	age=33
-// loaded in struct
-// 	struct {
-// 		TheName string `pongo:"name"`
-// 		TheAge  int    `pongo:"age"`
-// 		Map     map[string]int
-// 	}
-// becomes
-// 	{TheName:"myname" TheAge:33 Map:map[a:11 b:22]}
+/*
+PonGo (Properties on Go) is a package that converts properties files in complex structures.
+
+The file with the following content, for example
+	map.a=11
+	map.b=22
+	name=myname
+	age=33
+	arr=1,2,3,4
+	t=2014-03-18
+loaded in struct
+	struct {
+		TheName string     `pongo:"name"`
+		TheAge  int        `pongo:"age"`
+		Map     map[string]int
+		Array   []int      `pongo:"arr,inline"`
+		T       *time.Time `pongo:",timeformat=2006-01-02`
+	}
+becomes
+	{TheName:"myname" TheAge:33 Map:map[a:11 b:22] Array:[1 2 3 4] T:2014-03-18 00:00:00 +0000 UTC}
+
+PonGo supports the following tags:
+	timeformat: specifies a time parsing format
+	inline: the string value in intended as an inline array splitted with the decoder separator
+
+A prefix is a the used in the decoding phase to complete the properties names.
+*/
 package pongo
 
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+
 	"reflect"
 	"regexp"
 	"strconv"
@@ -25,8 +40,26 @@ import (
 	"time"
 )
 
+// Some data in the reader has not been assigned.
+type ErrDataLeft struct {
+	d []string
+}
+
+func (err *ErrDataLeft) Error() string {
+	return fmt.Sprintf("keys unread : %s", err.d)
+}
+
+// Checks if err is a ErrDataLeft and returns the unread keys.
+func IsDataLeft(err error) ([]string, bool) {
+	dl, ok := err.(*ErrDataLeft)
+	if !ok {
+		return nil, false
+	}
+	return dl.d, true
+}
+
 // Unmarshal parses the properties-encoded data and stores the result in the value pointed to by v.
-// It uses the default decoder
+// It uses the default decoder.
 func Unmarshal(b []byte, v interface{}, prefix string) error {
 	d := *defaultDecoder
 	d.r = bytes.NewReader(b)
@@ -41,7 +74,7 @@ type Decoder struct {
 	r      io.Reader
 }
 
-//NewDecoder returns a new decoder that reads from r.
+// NewDecoder returns a new decoder that reads from r, env is the preferred environment, and sep is the regex used to split inline array.
 func NewDecoder(r io.Reader, sep, env string) (d *Decoder, err error) {
 	var arrSep *regexp.Regexp
 	if sep == "" {
@@ -55,9 +88,10 @@ func NewDecoder(r io.Reader, sep, env string) (d *Decoder, err error) {
 	return &Decoder{arrSep: arrSep, env: env, r: r}, nil
 }
 
-func (d *Decoder) Decode(v interface{}, prefix string) error {
+// Decode populate v with the values extraced from decode's reader.
+func (d *Decoder) Decode(v interface{}, prefix string) (err error) {
 	s := decodStatus{}
-	err := s.readMap(d.r)
+	err = s.readMap(d.r)
 	if err != nil {
 		return err
 	}
@@ -66,13 +100,21 @@ func (d *Decoder) Decode(v interface{}, prefix string) error {
 	if t.Kind() != reflect.Ptr || r.IsNil() {
 		return errors.New("pointer needed")
 	}
-	if prefix != "" {
-		s.Push(prefix)
+	if prefix == "" {
+		prefix = "."
 	}
-	return d.decodeStruct(s, r.Elem(), t.Elem(), tag{})
+	err = d.decodeElement(&s, r.Elem(), t.Elem(), tag{Name: prefix})
+	if err != nil {
+		return err
+	}
+	u := s.getUnread()
+	if len(u) != 0 {
+		return &ErrDataLeft{u}
+	}
+	return nil
 }
 
-func (d *Decoder) decodeElement(s decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
+func (d *Decoder) decodeElement(s *decodStatus, v reflect.Value, t reflect.Type, tg tag) (err error) {
 	if tg.Name == "-" {
 		return nil
 	}
@@ -81,7 +123,13 @@ func (d *Decoder) decodeElement(s decodStatus, v reflect.Value, t reflect.Type, 
 	}
 	if tg.Name != "." {
 		s.Push(tg.Name)
-		defer s.Pop()
+		defer func() {
+			if v := recover(); v != nil {
+				err = fmt.Errorf("panic in %v: %s", s.pref, v)
+			} else {
+				s.Pop()
+			}
+		}()
 	}
 	switch v.Kind() {
 	case reflect.Struct:
@@ -113,7 +161,7 @@ func (d *Decoder) decodeField(v reflect.Value, val string) error {
 	return nil
 }
 
-func (d *Decoder) decodeSlice(s decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
+func (d *Decoder) decodeSlice(s *decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
 	if _, isInline := tg.Modifiers["inline"]; isInline {
 		val, ok := s.GetValue(d.env)
 		if !ok {
@@ -146,7 +194,7 @@ func (d *Decoder) decodeSlice(s decodStatus, v reflect.Value, t reflect.Type, tg
 	return nil
 }
 
-func (d *Decoder) decodeStruct(s decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
+func (d *Decoder) decodeStruct(s *decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
 	switch t.String() {
 	case "time.Time":
 		val, ok := s.GetValue(d.env)
@@ -165,7 +213,11 @@ func (d *Decoder) decodeStruct(s decodStatus, v reflect.Value, t reflect.Type, t
 	default:
 		for i := 0; i < t.NumField(); i++ {
 			f := t.Field(i)
-			err := d.decodeElement(s, v.Field(i), f.Type, newTag(f))
+			fv := v.Field(i)
+			if !fv.CanSet() {
+				continue
+			}
+			err := d.decodeElement(s, fv, f.Type, newTag(f))
 			if err != nil {
 				return err
 			}
@@ -174,13 +226,13 @@ func (d *Decoder) decodeStruct(s decodStatus, v reflect.Value, t reflect.Type, t
 	return nil
 }
 
-func (d *Decoder) decodeMap(s decodStatus, v reflect.Value, t reflect.Type) error {
+func (d *Decoder) decodeMap(s *decodStatus, v reflect.Value, t reflect.Type) error {
 	if t.Key().Kind() != reflect.String {
 		return errors.New("bad map key")
 	}
 	v.Set(reflect.MakeMap(t))
-	p := strings.Join(s.p, ".") + "."
-	for key := range s.d {
+	p := strings.Join(s.pref, ".") + "."
+	for key := range s.data {
 		if !strings.HasPrefix(key, p) {
 			continue
 		}
@@ -196,7 +248,7 @@ func (d *Decoder) decodeMap(s decodStatus, v reflect.Value, t reflect.Type) erro
 	return nil
 }
 
-func (d *Decoder) decodePtr(s decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
+func (d *Decoder) decodePtr(s *decodStatus, v reflect.Value, t reflect.Type, tg tag) error {
 	nv := reflect.New(v.Type().Elem())
 	err := d.decodeElement(s, nv.Elem(), nv.Elem().Type(), tg)
 	if err != nil {

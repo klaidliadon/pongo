@@ -33,7 +33,7 @@ type Client struct {
 
 var clientFile = `
 title=Dati Bottonificio,
-mode=web
+mode=web` + "\r" + `
 auth.user=web
 auth.pwd=web
 db.database=creavista_bottonificio
@@ -67,6 +67,7 @@ type testStruct struct {
 	}
 	Timer  *time.Time
 	Timer2 time.Time `pongo:"timer2,timeformat=2006"`
+	val    string
 }
 
 var f1 = `#comment
@@ -87,11 +88,20 @@ asd.timer2=2012
 asd.timemap.a=2012-01-02 15:04:05
 asd.timemap.b=2012-01-02 15:04:05
 asd.timemap.c=2012-01-02 15:04:05
+asd.val=aaaa
+asd.val@env=aaaa
 `
+
+func TestSomeErrors(t *testing.T) {
+	err := Unmarshal([]byte(f1), &struct{ Field map[int]int }{}, "")
+	if err == nil {
+		t.Errorf("error expected")
+	}
+}
 
 func TestDecode(t *testing.T) {
 	d, err := NewDecoder(nil, ",)	", "")
-	if err == nil {
+	if _, ok := IsDataLeft(err); ok || err == nil {
 		t.Errorf("error expected")
 	}
 
@@ -107,7 +117,8 @@ func TestDecode(t *testing.T) {
 
 	d, err = NewDecoder(bytes.NewReader([]byte(f1)), "", "env")
 	v = testStruct{}
-	if err := d.Decode(&v, "asd"); err != nil {
+	err = d.Decode(&v, "asd")
+	if _, ok := IsDataLeft(err); !ok {
 		t.Errorf("error: %s", err)
 	}
 	t.Logf("Result (prefix `%s`):\n%+v", "asd", v)
@@ -115,12 +126,13 @@ func TestDecode(t *testing.T) {
 
 func TestUnmarshal(t *testing.T) {
 	v := testStruct{}
-	if err := Unmarshal([]byte(f1), &v, "asd"); err != nil {
+	err := Unmarshal([]byte(f1), &v, "asd")
+	if _, ok := IsDataLeft(err); !ok {
 		t.Errorf("error: %s", err)
 	}
-	t.Logf("Result (prefix `%s`):\n%+v", "asd", v)
+	t.Logf("Result (prefix `%s`):\n%+v\n%s", "asd", v, err)
 
-	err := Unmarshal([]byte(f1+"\nz"), &v, "asd")
+	err = Unmarshal([]byte(f1+"\nz"), &v, "asd")
 	if err == nil {
 		t.Errorf("error expected")
 	}
