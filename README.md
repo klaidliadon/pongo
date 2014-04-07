@@ -21,6 +21,48 @@ becomes
 
 	{TheName:"myname" TheAge:33 Map:map[a:11 b:22]}
 
+PonGo supports the following tags:
+
+	timeformat: specifies a time parsing format
+	inline:		the value is intended as an csv inline array 
+
+
+##Special Types
+
+###Time
+A time.Time field is parsed with the following timeformat `2006-01-02 15:04:05`, unless the `timeformat` tag is specified.
+###Map
+A map includes every property that starts with its prefix. The struct
+	
+	struct {
+		Map map[string]string
+	}
+
+with the file
+
+	map.a = asd
+	map.b = lol
+
+will become
+
+	{["a":"asd" "b":"lol"]}
+
+###Slices
+A slice element without `inline` tag finds the properties with numbers after the slice prefix. The struct
+	
+	struct {
+		Array []string
+	}
+
+with the file
+
+	array.1 = asd
+	array.2 = lol
+
+will become
+
+	{["asd" "lol"]}
+
 ##Environments
 
 PonGo offers an environment feature: it works by simply adding **@environment** at the end of the property name. 
@@ -49,5 +91,5 @@ And without any environment
 	sampleprop = anotherValue
 	anotherprop = the value
 
-See [![GoDoc](https://godoc.org/github.com/klaidliadon/pongo?status.png)](https://godoc.org/github.com/klaidliadon/pongo) for help
+See [documentation](https://godoc.org/github.com/klaidliadon/pongo) for help.
 

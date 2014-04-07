@@ -21,9 +21,9 @@ becomes
 
 PonGo supports the following tags:
 	timeformat: specifies a time parsing format
-	inline: the string value in intended as an inline array splitted with the decoder separator
+	inline: the string value is intended as an inline array splitted with the decoder separator
 
-A prefix is a the used in the decoding phase to complete the properties names.
+A prefix is a string used in the decoding phase to complete the properties names.
 */
 package pongo
 
@@ -75,23 +75,21 @@ type Decoder struct {
 }
 
 // NewDecoder returns a new decoder that reads from r, env is the preferred environment, and sep is the regex used to split inline array.
-func NewDecoder(r io.Reader, sep, env string) (d *Decoder, err error) {
-	var arrSep *regexp.Regexp
+func NewDecoder(r io.Reader, sep, env string) (*Decoder, error) {
 	if sep == "" {
-		arrSep = defaultDecoder.arrSep
-	} else {
-		arrSep, err = regexp.Compile(sep)
-		if err != nil {
-			return nil, err
-		}
+		return &Decoder{arrSep: defaultDecoder.arrSep, env: env, r: r}, nil
+	}
+	arrSep, err := regexp.Compile(sep)
+	if err != nil {
+		return nil, err
 	}
 	return &Decoder{arrSep: arrSep, env: env, r: r}, nil
 }
 
 // Decode populate v with the values extraced from decode's reader.
-func (d *Decoder) Decode(v interface{}, prefix string) (err error) {
+func (d *Decoder) Decode(v interface{}, prefix string) error {
 	s := decodStatus{}
-	err = s.readMap(d.r)
+	err := s.readMap(d.r)
 	if err != nil {
 		return err
 	}
