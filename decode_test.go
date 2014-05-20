@@ -21,6 +21,7 @@ type Client struct {
 	Scripts []struct {
 		Name    string
 		Command []string `pongo:",inline"`
+		Note    []string `pongo:"-"`
 	}
 	Job struct {
 		Month   []int `pongo:",inline"`
@@ -68,6 +69,10 @@ type testStruct struct {
 	Timer  *time.Time
 	Timer2 time.Time `pongo:"timer2,timeformat=2006"`
 	val    string
+	Float  float64
+	SFloat float32
+	Dur    time.Duration
+	Bool   bool
 }
 
 var f1 = `#comment
@@ -90,6 +95,10 @@ asd.timemap.b=2012-01-02 15:04:05
 asd.timemap.c=2012-01-02 15:04:05
 asd.val=aaaa
 asd.val@env=aaaa
+asd.float=10.5
+asd.sfloat=10.5
+asd.dur=010m05s
+asd.bool=true
 `
 
 func TestSomeErrors(t *testing.T) {

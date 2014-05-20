@@ -146,15 +146,37 @@ func (d *Decoder) decodeElement(s *decodStatus, v reflect.Value, t reflect.Type,
 }
 
 func (d *Decoder) decodeField(v reflect.Value, val string) error {
-	switch v.Kind() {
-	case reflect.String:
-		v.SetString(val)
-	case reflect.Int:
-		nv, err := strconv.Atoi(val)
+	switch v.Type() {
+	case reflect.TypeOf(time.Duration(0)):
+		a, err := time.ParseDuration(val)
 		if err != nil {
 			return err
 		}
-		v.SetInt(int64(nv))
+		v.SetInt(int64(a))
+	default:
+		switch v.Kind() {
+		case reflect.String:
+			v.SetString(val)
+		case reflect.Int, reflect.Int32, reflect.Int64:
+			v.Type()
+			nv, err := strconv.ParseInt(val, 10, 64)
+			if err != nil {
+				return err
+			}
+			v.SetInt(nv)
+		case reflect.Bool:
+			b, err := strconv.ParseBool(val)
+			if err != nil {
+				return err
+			}
+			v.SetBool(b)
+		case reflect.Float32, reflect.Float64:
+			f, err := strconv.ParseFloat(val, 64)
+			if err != nil {
+				return err
+			}
+			v.SetFloat(f)
+		}
 	}
 	return nil
 }
