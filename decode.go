@@ -60,10 +60,10 @@ func IsDataLeft(err error) ([]string, bool) {
 
 // Unmarshal parses the properties-encoded data and stores the result in the value pointed to by v.
 // It uses the default decoder.
-func Unmarshal(b []byte, v interface{}, prefix string) error {
+func Unmarshal(b []byte, v interface{}, prefix string, readAll bool) error {
 	d := *defaultDecoder
 	d.r = bytes.NewReader(b)
-	return d.Decode(v, prefix)
+	return d.Decode(v, prefix, readAll)
 }
 
 // A Decoder reads and decodes properties into struct from an input stream.
@@ -87,7 +87,7 @@ func NewDecoder(r io.Reader, sep, env string) (*Decoder, error) {
 }
 
 // Decode populate v with the values extraced from decode's reader.
-func (d *Decoder) Decode(v interface{}, prefix string) error {
+func (d *Decoder) Decode(v interface{}, prefix string, readAll bool) error {
 	s := decodStatus{}
 	err := s.readMap(d.r)
 	if err != nil {
@@ -105,9 +105,11 @@ func (d *Decoder) Decode(v interface{}, prefix string) error {
 	if err != nil {
 		return err
 	}
-	u := s.getUnread()
-	if len(u) != 0 {
-		return &ErrDataLeft{u}
+	if readAll {
+		u := s.getUnread()
+		if len(u) != 0 {
+			return &ErrDataLeft{u}
+		}
 	}
 	return nil
 }

@@ -56,7 +56,10 @@ func (s *decodStatus) readMap(r io.Reader) (err error) {
 		}
 		i := strings.Index(v, "=")
 		if i < 1 {
-			return fmt.Errorf("bad row %v, %s", l, v)
+			i = strings.Index(v, ":")
+			if i < 1 {
+				return fmt.Errorf("bad row %v, %s", l, v)
+			}
 		}
 		lastKey = strings.Trim(v[:i], " ")
 		var env = ""

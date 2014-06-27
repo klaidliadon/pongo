@@ -102,7 +102,7 @@ asd.bool=true
 `
 
 func TestSomeErrors(t *testing.T) {
-	err := Unmarshal([]byte(f1), &struct{ Field map[int]int }{}, "")
+	err := Unmarshal([]byte(f1), &struct{ Field map[int]int }{}, "", false)
 	if err == nil {
 		t.Errorf("error expected")
 	}
@@ -120,13 +120,13 @@ func TestDecode(t *testing.T) {
 	}
 
 	v := testStruct{}
-	if d.Decode(v, "asd") == nil {
+	if d.Decode(v, "asd", false) == nil {
 		t.Errorf("error expected")
 	}
 
 	d, err = NewDecoder(bytes.NewReader([]byte(f1)), "", "env")
 	v = testStruct{}
-	err = d.Decode(&v, "asd")
+	err = d.Decode(&v, "asd", true)
 	if _, ok := IsDataLeft(err); !ok {
 		t.Errorf("error: %s", err)
 	}
@@ -135,13 +135,13 @@ func TestDecode(t *testing.T) {
 
 func TestUnmarshal(t *testing.T) {
 	v := testStruct{}
-	err := Unmarshal([]byte(f1), &v, "asd")
+	err := Unmarshal([]byte(f1), &v, "asd", true)
 	if _, ok := IsDataLeft(err); !ok {
 		t.Errorf("error: %s", err)
 	}
 	t.Logf("Result (prefix `%s`):\n%+v\n%s", "asd", v, err)
 
-	err = Unmarshal([]byte(f1+"\nz"), &v, "asd")
+	err = Unmarshal([]byte(f1+"\nz"), &v, "asd", false)
 	if err == nil {
 		t.Errorf("error expected")
 	}
@@ -149,7 +149,7 @@ func TestUnmarshal(t *testing.T) {
 
 func TestUnmarshalConfig(t *testing.T) {
 	v := Client{}
-	if err := Unmarshal([]byte(clientFile), &v, ""); err != nil {
+	if err := Unmarshal([]byte(clientFile), &v, "", false); err != nil {
 		t.Errorf("error: %s", err)
 	}
 	t.Logf("Result (prefix `%s`):\n%+v", "", v)
