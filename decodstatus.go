@@ -61,7 +61,7 @@ func (s *decodStatus) readMap(r io.Reader) (err error) {
 				return fmt.Errorf("bad row %v, %s", l, v)
 			}
 		}
-		lastKey = strings.Trim(v[:i], " ")
+		lastKey = strings.Trim(strings.Replace(v[:i], "-", "", -1), " ")
 		var env = ""
 		if x := strings.Split(lastKey, "@"); len(x) > 1 {
 			lastKey = x[0]
