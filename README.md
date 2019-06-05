@@ -1,25 +1,31 @@
-#PonGo
+# PonGo
 
 PonGo (Properties on Go) is a package that converts properties files in complex structures.
 
-The file with the following content, for example
+The file with the following content, for example:
 
-	map.a=11
-	map.b=22
-	name=myname
-	age=33
+```ini
+map.a=11
+map.b=22
+name=myname
+age=33
+```
 
 loaded in struct
 
-	struct {
-		TheName string `pongo:"name"`
-		TheAge  int    `pongo:"age"`
-		Map     map[string]int
-	}
+```go
+struct {
+	TheName string `pongo:"name"`
+	TheAge  int    `pongo:"age"`
+	Map     map[string]int
+}
+```
 
 becomes
 
-	{TheName:"myname" TheAge:33 Map:map[a:11 b:22]}
+```
+{TheName:"myname" TheAge:33 Map:map[a:11 b:22]}
+```
 
 PonGo supports the following tags:
 
@@ -27,69 +33,90 @@ PonGo supports the following tags:
 	inline:		the value is intended as an csv inline array 
 
 
-##Special Types
+## Special Types
 
-###Time
+### Time
+
 A time.Time field is parsed with the following timeformat `2006-01-02 15:04:05`, unless the `timeformat` tag is specified.
-###Map
+
+### Map
+
 A map includes every property that starts with its prefix. The struct
-	
-	struct {
-		Map map[string]string
-	}
+
+```go
+struct {
+	Map map[string]string
+}
+```
 
 with the file
 
-	map.a = asd
-	map.b = lol
-
+```ini
+map.a = asd
+map.b = lol
+```
 will become
 
 	{["a":"asd" "b":"lol"]}
 
-###Slices
+### Slices
+
 A slice element without `inline` tag finds the properties with numbers after the slice prefix. The struct
-	
-	struct {
-		Array []string
-	}
+
+```go
+struct {
+	Array []string
+}
+```
 
 with the file
 
-	array.1 = asd
-	array.2 = lol
+```ini
+array.1 = asd
+array.2 = lol
+```
 
 will become
 
-	{["asd" "lol"]}
+```
+{["asd" "lol"]}
+```
 
-##Environments
+## Environments
 
 PonGo offers an environment feature: it works by simply adding **@environment** at the end of the property name. 
 Pongo will search for the property with the environment appendix first, if nothing is found it will search the value
 in the simple property.
 
-Take the following file
+Take the following file:
 
-	sampleprop@env1 = sampleValue
-	sampleprop = anotherValue
-	anotherprop@env2 = a property
-	anotherprop = the value
+```
+sampleprop@env1 = sampleValue
+sampleprop = anotherValue
+anotherprop@env2 = a property
+anotherprop = the value
+```
 
-Loading the properties with the environment **env1** will set the properties to
+Loading the properties with the environment **env1** will set the properties to:
 
-	sampleprop = sampleValue
-	anotherprop = the value
+```ini
+sampleprop = sampleValue
+anotherprop = the value
+```
 
-Using **env2**
+Using **env2**:
 
-	sampleprop = anotherValue
-	anotherprop = a property
+```ini
+sampleprop = anotherValue
+anotherprop = a property
+```
 
 And without any environment
 
-	sampleprop = anotherValue
-	anotherprop = the value
+```ini
+sampleprop = anotherValue
+anotherprop = the value
+```
 
 See [documentation](https://godoc.org/github.com/klaidliadon/pongo) for help.
 
